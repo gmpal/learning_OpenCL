@@ -1,0 +1,16 @@
+/* OPENCL Extension and more */
+
+OpenCL vendors provides some extensions we can include in the OpenCL kernels, for example, to print some debug information. 
+
+All extensions in OpenCL follow the syntax (to be written in the kernel) 
+# pragma OPENCL EXTENSION extension_name : behavior
+
+For example: printf() is a non-standard OpenCL function. To enable it: 
+
+	Extension for Intel OpenCL: 
+		# pragma OPENCL EXTENSION cl_intel_printf :enable
+
+	Extension for AMD APP OpenCL:
+		# pragma OPENCL EXTENSION cl_amd_printf :enable
+		
+		

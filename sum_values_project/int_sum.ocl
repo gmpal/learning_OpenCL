@@ -1,0 +1,15 @@
+#define N 1000
+
+// Integers sum 
+__kernel void intSum(__global int* dest, int num, int flag)
+{
+	int result = 0; 
+
+	#pragma unroll N 
+	for (int i = 0; i < N; ++i)
+		result = result + num; 
+   
+	//fooling the compiler
+    if (flag * result)
+        dest[get_global_id(0)] = result;
+}
