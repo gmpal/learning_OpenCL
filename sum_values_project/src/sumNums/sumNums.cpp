@@ -16,8 +16,13 @@ bool PRESS_KEY_TO_CLOSE_WINDOW = true; // when running from within visual studio
 #define NBR_ALGORITHM_VERSIONS 100
 #define NBR_EXPERIMENTS 5
 #define N 1000
+#define NUM_INT 15
+#define NUM_FLOAT 15.5
+#define ITERATIONS_TIMING 100
+#define ITERATIONS_KERNELS 1000 //make sure its the same of Kernels! 
 
 //function to do the sum on CPU
+
 template <class T1, class T2>
 int64_t sumOfNums(T1 *dest, T2 num, int flag)
 {
@@ -29,6 +34,9 @@ int64_t sumOfNums(T1 *dest, T2 num, int flag)
 	for (int i = 0; i < N; ++i)
 		result = result + num; 
    
+
+	//std::cout << "Result from CPU: " << result << "." << std::endl;
+	
 	//fooling the compiler
     if (flag * result)
         dest[0] = result; //won't be executed
@@ -109,11 +117,11 @@ int main(int argc, char *argv[])
 		// *0* Configuration
 		string kernel_file("all_kernels.ocl");
 
-		int PLATFORM_ID = defaultOrViaArgs(0, 'p', argc, argv);
+		int PLATFORM_ID = defaultOrViaArgs(1, 'p', argc, argv);
 		int DEVICE_ID = defaultOrViaArgs(0, 'd', argc, argv);
 		unsigned int array_size = defaultOrViaArgs(1000, 's', argc, argv); // DESTINATION array size
-		int num_int = 15; 
-		float num_float = 15.5;
+		int num_int = NUM_INT; 
+		float num_float = NUM_FLOAT;
 		int flag = 0;
    		
 		// *1* OpenCL initialization
@@ -132,6 +140,18 @@ int main(int argc, char *argv[])
 		cl::Buffer dest_buffer1(context, CL_MEM_WRITE_ONLY, array_size * sizeof(cl_float));
 		cl::Buffer dest_buffer2(context, CL_MEM_WRITE_ONLY, array_size * sizeof(cl_float));
 
+		
+		float starting_float = 1.1f;
+		
+		int expected_sum_int = 0;
+		float expected_sum_float = 0;
+		float expected_sum_mix = starting_float;
+
+		for (int i = 0; i < ITERATIONS_KERNELS; ++i) {
+			expected_sum_int = expected_sum_int + NUM_INT;
+			expected_sum_float = expected_sum_float + NUM_FLOAT;
+			expected_sum_mix = expected_sum_mix + NUM_INT;
+		}
 
         // *4* Create the kernel
         cl::Kernel kernel01(program, "intSum");
@@ -139,18 +159,25 @@ int main(int argc, char *argv[])
 		kernel01.setArg<cl::Buffer>(0, dest_buffer0);
 		kernel01.setArg<cl_uint>(1, num_int);
 		kernel01.setArg<cl_uint>(2, flag);
+		kernel01.setArg<cl_uint>(3, expected_sum_int);
+		
 
 		cl::Kernel kernel02(program, "floatSum");
 		// set the kernel arguments
 		kernel02.setArg<cl::Buffer>(0, dest_buffer1);
-		kernel02.setArg<cl_uint>(1, num_float);
+		kernel02.setArg<cl_float>(1, num_float);
 		kernel02.setArg<cl_uint>(2, flag);
+		kernel02.setArg<cl_float>(3, expected_sum_float);
+		
 
 		cl::Kernel kernel03(program, "mixSum");
 		// set the kernel arguments
 		kernel03.setArg<cl::Buffer>(0, dest_buffer2);
 		kernel03.setArg<cl_uint>(1, num_int);
 		kernel03.setArg<cl_uint>(2, flag);
+		kernel03.setArg<cl_float>(3, starting_float);
+		kernel03.setArg<cl_float>(4, expected_sum_mix);
+		
 
 		// *5* execute the code on the device
 		cout << "Executing sumNumbers on device '"<< jc::deviceName(device) << endl;
@@ -163,7 +190,7 @@ int main(int argc, char *argv[])
 		vector<string> names;
 
 
-		for (int t = 0; t < 100; ++t) {
+		for (int t = 0; t < ITERATIONS_TIMING; ++t) {
 			int version = 0;
 			// transfer source data from the host to the device
 

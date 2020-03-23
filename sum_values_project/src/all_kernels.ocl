@@ -1,14 +1,18 @@
+#pragma OPENCL EXTENSION cl_amd_printf : enable 
 #define N 1000
 
 // Integers sum 
-__kernel void intSum(__global int* dest, int num, int flag)
+__kernel void intSum(__global int* dest, int num, int flag, int expected_sum)
 {
 	int result = 0; 
 
 	#pragma unroll N 
 	for (int i = 0; i < N; ++i)
 		result = result + num; 
-   
+    
+	if (result != expected_sum)
+		printf("Error in FLOAT+INT");
+
 	//fooling the compiler
     if (flag * result)
         dest[get_global_id(0)] = result;
@@ -17,7 +21,7 @@ __kernel void intSum(__global int* dest, int num, int flag)
 
 
 // Float sum 
-__kernel void floatSum(__global float* dest, float num, int flag)
+__kernel void floatSum(__global float* dest, float num, int flag, float expected_sum)
 {
 	float result = 0; 
 
@@ -25,6 +29,8 @@ __kernel void floatSum(__global float* dest, float num, int flag)
 	for (int i = 0; i < N; ++i)
 		result = result + num; 
    
+	if (result != expected_sum)
+		printf("Error in FLOAT+INT");
 	//fooling the compiler
     if (flag * result)
         dest[get_global_id(0)] = result;
@@ -32,15 +38,19 @@ __kernel void floatSum(__global float* dest, float num, int flag)
 
 
 // Mixed float and integer sum 
-__kernel void mixSum(__global float* dest, int num, int flag)
+__kernel void mixSum(__global float* dest, int num, int flag, float starting_float, float expected_sum)
 {
 	//Having a starting number different from 0 is not really an issue: we don't care about the result, only about the operation
-	float result = 1.1; 
+	float result = starting_float; 
 
 	#pragma unroll N 
 	for (int i = 0; i < N; ++i)
 		result = result + num; 
    
+	if (result != expected_sum)
+		printf("Error in FLOAT+INT");
+	
+
 	//fooling the compiler
     if (flag * result)
         dest[get_global_id(0)] = result;
