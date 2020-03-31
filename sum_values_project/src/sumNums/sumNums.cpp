@@ -15,13 +15,44 @@ using namespace std;
 bool PRESS_KEY_TO_CLOSE_WINDOW = true; // when running from within visual studio
 #define NBR_ALGORITHM_VERSIONS 100
 #define NBR_EXPERIMENTS 5
-#define N 1000
+#define N 1024 * 16
 #define NUM_INT 15
 #define NUM_FLOAT 15.5
 #define ITERATIONS_TIMING 100
 #define ITERATIONS_KERNELS 1000 //make sure its the same of Kernels! 
 
 //function to do the sum on CPU
+
+cl::Program buildProgram(
+	const std::string& file_name,
+	const cl::Context& context,
+	const cl::Device& device,
+	int amount)
+{
+	vector<cl::Device> devices;
+	devices.push_back(device);
+	std::string source_code = jc::fileToString(file_name);
+	std::pair<const char*, size_t> source(source_code.c_str(), source_code.size());
+	cl::Program::Sources sources;
+	sources.push_back(source);
+	cl::Program program(context, sources);
+	std::string options = "-D N=" + std::to_string(amount);
+	try {
+		program.build(devices, options.c_str());
+	}
+	catch (cl::Error & e) {
+		std::string msg;
+		program.getBuildInfo<std::string>(devices[0], CL_PROGRAM_BUILD_LOG, &msg);
+		std::cerr << "Your kernel failed to compile" << std::endl;
+		std::cerr << "-----------------------------" << std::endl;
+		std::cerr << msg;
+		throw(e);
+	}
+
+	return program;
+}
+
+
 
 template <class T1, class T2>
 int64_t sumOfNums(T1 *dest, T2 num, int flag)
@@ -119,6 +150,7 @@ int main(int argc, char *argv[])
 
 		int PLATFORM_ID = defaultOrViaArgs(1, 'p', argc, argv);
 		int DEVICE_ID = defaultOrViaArgs(0, 'd', argc, argv);
+		// TODO: array_size is not used deleting it is better?
 		unsigned int array_size = defaultOrViaArgs(1000, 's', argc, argv); // DESTINATION array size
 		int num_int = NUM_INT; 
 		float num_float = NUM_FLOAT;
@@ -126,9 +158,10 @@ int main(int argc, char *argv[])
    		
 		// *1* OpenCL initialization
 		cl::Device device = jc::getDevice(PLATFORM_ID, DEVICE_ID, PRESS_KEY_TO_CLOSE_WINDOW);
+
 		cl::Context context(device);
 		cl::CommandQueue queue(context, device, CL_QUEUE_PROFILING_ENABLE);
-		cl::Program program = jc::buildProgram(kernel_file, context, device);
+		
 
 		// *2* Allocate memory on the host and populate source
         int *gpu_dst = new int[array_size], *cpu_dst = new int[array_size];
@@ -147,41 +180,17 @@ int main(int argc, char *argv[])
 		float expected_sum_float = 0;
 		float expected_sum_mix = starting_float;
 
-		for (int i = 0; i < ITERATIONS_KERNELS; ++i) {
+		for (int i = 0; i < N; ++i) {
 			expected_sum_int = expected_sum_int + NUM_INT;
 			expected_sum_float = expected_sum_float + NUM_FLOAT;
 			expected_sum_mix = expected_sum_mix + NUM_INT;
 		}
 
-        // *4* Create the kernel
-        cl::Kernel kernel01(program, "intSum");
-        // set the kernel arguments
-		kernel01.setArg<cl::Buffer>(0, dest_buffer0);
-		kernel01.setArg<cl_uint>(1, num_int);
-		kernel01.setArg<cl_uint>(2, flag);
-		kernel01.setArg<cl_uint>(3, expected_sum_int);
-		
-
-		cl::Kernel kernel02(program, "floatSum");
-		// set the kernel arguments
-		kernel02.setArg<cl::Buffer>(0, dest_buffer1);
-		kernel02.setArg<cl_float>(1, num_float);
-		kernel02.setArg<cl_uint>(2, flag);
-		kernel02.setArg<cl_float>(3, expected_sum_float);
-		
-
-		cl::Kernel kernel03(program, "mixSum");
-		// set the kernel arguments
-		kernel03.setArg<cl::Buffer>(0, dest_buffer2);
-		kernel03.setArg<cl_uint>(1, num_int);
-		kernel03.setArg<cl_uint>(2, flag);
-		kernel03.setArg<cl_float>(3, starting_float);
-		kernel03.setArg<cl_float>(4, expected_sum_mix);
+        
 		
 
 		// *5* execute the code on the device
 		cout << "Executing sumNumbers on device '"<< jc::deviceName(device) << endl;
-        cl::NDRange global(array_size); // number of work items
 		// local is left to be chosen by OpenCL
 		// cl::NDRange local(wg_size);
 
@@ -189,31 +198,70 @@ int main(int argc, char *argv[])
 		long long runtimes[NBR_ALGORITHM_VERSIONS][NBR_EXPERIMENTS];
 		vector<string> names;
 
-
-		for (int t = 0; t < ITERATIONS_TIMING; ++t) {
-			int version = 0;
-			// transfer source data from the host to the device
-
-		
-			//int + int
-			runtimes[version++][t] = sumOfNums(cpu_dst, num_int, flag); // microseconds
-			if (t == 0) names.push_back("CPU INT+INT");
-			runtimes[version++][t] = jc::runAndTimeKernel(kernel01, queue, global);
-			if (t == 0) names.push_back("GPU INT+INT");
+		int work_group_size = 256;
+		int work_items = N / 256;
+		for (int i = 0; i < 9; ++i) {
 			
-			//float + float
-			runtimes[version++][t] = sumOfNums(cpu_dst_f, num_float, flag); // microseconds
-			if (t == 0)	names.push_back("CPU FLOAT+FLOAT");		
-			runtimes[version++][t] = jc::runAndTimeKernel(kernel02, queue, global); // , local
-			if (t == 0)	names.push_back("GPU FLOAT+FLOAT");
+			// compile time with N macro equals to work_group_size
+			cl::Program program = buildProgram(kernel_file, context, device, work_group_size);
+
+			// Prepare the kernel parameters
+			cl::Kernel kernel01(program, "intSum");
+			// set the kernel arguments
+			kernel01.setArg<cl::Buffer>(0, dest_buffer0);
+			kernel01.setArg<cl_uint>(1, num_int);
+			kernel01.setArg<cl_uint>(2, flag);
+			kernel01.setArg<cl_uint>(3, expected_sum_int);
+
+
+			cl::Kernel kernel02(program, "floatSum");
+			// set the kernel arguments
+			kernel02.setArg<cl::Buffer>(0, dest_buffer1);
+			kernel02.setArg<cl_float>(1, num_float);
+			kernel02.setArg<cl_uint>(2, flag);
+			kernel02.setArg<cl_float>(3, expected_sum_float);
+
+
+			cl::Kernel kernel03(program, "mixSum");
+			// set the kernel arguments
+			kernel03.setArg<cl::Buffer>(0, dest_buffer2);
+			kernel03.setArg<cl_uint>(1, num_int);
+			kernel03.setArg<cl_uint>(2, flag);
+			kernel03.setArg<cl_float>(3, starting_float);
+			kernel03.setArg<cl_float>(4, expected_sum_mix);
 			
-			//float + int 
-			runtimes[version++][t] = sumOfNums(cpu_dst_f, num_int, flag); // microseconds
-			if (t == 0)	names.push_back("CPU FLOAT+INT");
-			runtimes[version++][t] = jc::runAndTimeKernel(kernel03, queue, global); // , local		
-			if (t == 0) names.push_back("GPU FLOAT+INT");
+			std::cout << "WS" << work_group_size << std::endl;
+			cl::NDRange global(N);
+			cl::NDRange local(work_group_size);
+
+			for (int t = 0; t < NBR_EXPERIMENTS; ++t) {
+				int version = 3 * i;
+				// transfer source data from the host to the device
+
+				runtimes[version++][t] = jc::runAndTimeKernel(kernel01, queue, global, local);
+				if (t == 0) {
+						names.push_back("GPU INT+INT ");
+						names.back() += "g=";
+						names.back() += to_string(work_group_size);
+				}
+				
+				runtimes[version++][t] = jc::runAndTimeKernel(kernel02, queue, global, local); // , local
+				if (t == 0) {
+					names.push_back("GPU FLOAT+FLOAT");
+					names.back() += "g=";
+					names.back() += to_string(work_group_size);
+				}
+
+				runtimes[version++][t] = jc::runAndTimeKernel(kernel03, queue, global, local); // , local	
+				if (t == 0) {
+					names.push_back("GPU FLOAT+INT");
+					names.back() += "g=";
+					names.back() += to_string(work_group_size);
+				}
+			}
+			work_items *= 2;
+			work_group_size /= 2;
 		}
-
 		long long referenceTime = minimalValue(runtimes[0], NBR_EXPERIMENTS);
 		analyzePerformance(names, runtimes, array_size, array_size * sizeof(float), 0, referenceTime);
 

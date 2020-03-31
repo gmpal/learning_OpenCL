@@ -65,7 +65,7 @@ cl::Program stringToProgram(const string& source_code, const cl::Context& contex
     sources.push_back(source);
     cl::Program program(context, sources);
     try {
-        program.build(devices);
+        program.build(devices, "-cl-opt-disable");
     }
     catch (cl::Error& e) {
         string msg;
